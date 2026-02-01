@@ -367,6 +367,57 @@ LIST_ICE = {
     "ice",
 }
 
+# Подповерхностное рассеивание в плотных блоках (слабое SSS)
+LIST_SSS_DENSE = {
+    # Грибы
+    "brown_mushroom_block",
+    "mushroom_block_inside",
+    "red_mushroom_block",
+    # "mushroom_stem", # нормальная карта «круглая», поэтому SSS не нужен
+    # Мох
+    "moss_block",
+    "pale_moss_block",
+    "moss_carpet",
+    "pale_moss_carpet",
+    # Шерсть
+    "black_wool",
+    "blue_wool",
+    "brown_wool",
+    "cyan_wool",
+    "gray_wool",
+    "green_wool",
+    "light_blue_wool",
+    "light_gray_wool",
+    "lime_wool",
+    "magenta_wool",
+    "orange_wool",
+    "pink_wool",
+    "purple_wool",
+    "red_wool",
+    "white_wool",
+    "yellow_wool",
+    # Остальное
+    "wet_sponge",
+    "snow",
+    "cake_side",
+    "cake_top",
+}
+
+# Подповерхностное рассеивание в легкопроницаемых блоках (сильное SSS)
+LIST_SSS_SPARSE = {
+    "sponge",
+    "powder_snow",
+    "hay_block_side",
+    "hay_block_top",
+    "honeycomb_block",
+    "packed_ice",
+    "blue_ice",
+    "frosted_ice_0",
+    "frosted_ice_1",
+    "frosted_ice_2",
+    "frosted_ice_3",
+}
+
 # ==========================================
 # ОПРЕДЕЛЕНИЕ ФУНКЦИЙ
 # ==========================================
@@ -1127,6 +1178,168 @@ def setup_ice(mat):
 
     print(f"Материал {mat.name} успешно обновлён!")
 
+# Подповерхностное рассеивание в плотных блоках (слабое SSS)
+def setup_sss_dense(mat):
+  
+    tree = mat.node_tree
+    nodes = tree.nodes
+    links = tree.links
+    
+    # 1. Проверка: не настроен ли он уже?
+    # Если в нодах уже есть фрейм с названием "Auto_SSS_Dense", выходим
+    if "Auto_SSS_Dense" in nodes:
+        print(f"Материал {mat.name} уже настроен.")
+        return
+
+    # 2. Ищем ключевые узлы (Якоря)
+    # Нам нужно найти Principled BSDF и Output
+    principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    
+    if not principled or not output_node:
+        print(f"В материале {mat.name} нет Principled BSDF или Output!")
+        return
+
+    # 3. Ищем текстуру цвета (Albedo)
+    # Ищем, что подключено во вход 'Base Color' у Principled BSDF
+    base_color_socket = principled.inputs['Base Color']
+    image_node = None
+    
+    if base_color_socket.is_linked:
+        # Берём узел, от которого идёт связь
+        image_node = base_color_socket.links[0].from_node
+        # Проверяем, точно ли это картинка
+        if image_node.type != 'TEX_IMAGE':
+            print(f"В {mat.name} к цвету подключена не картинка, а {image_node.type}")
+            # Можно прервать или продолжить, но лучше прервать пока
+            # return 
+    else:
+        print(f"В {mat.name} нет текстуры, подключенной к Base Color")
+        return
+
+    # 4. Донастраиваем PrincipledBSDF
+    principled.subsurface_method = 'BURLEY'
+    principled.inputs[8].default_value = 1.0
+    principled.inputs[10].default_value = 1.0
+
+    # ==========================================
+    # 5. СОЗДАНИЕ НОВЫХ НОД (как на скриншоте)
+    # ==========================================
+    
+    # Создаем Фрейм
+    frame = nodes.new('NodeFrame')
+    frame.name = "Auto_SSS_Dense"
+    frame.label = "Auto SSS Dense"
+    
+    # Gamma (чтобы линейную картинку получить)
+    gamma_node = nodes.new('ShaderNodeGamma')
+    gamma_node.inputs['Gamma'].default_value = 0.4545
+    gamma_node.parent = frame
+    gamma_node.location = (principled.location.x, principled.location.y - 500)
+    
+    # Hue/Saturation (для насыщенности SSS)
+    hsv_node = nodes.new('ShaderNodeHueSaturation')
+    hsv_node.inputs['Saturation'].default_value = 3.0
+    hsv_node.inputs['Value'].default_value = 0.8
+    hsv_node.parent = frame
+    hsv_node.location = (principled.location.x + 200, principled.location.y - 500)
+
+    # ==========================================
+    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # ==========================================
+
+    # Текстура -> Gamma
+    links.new(image_node.outputs['Color'], gamma_node.inputs['Color'])
+
+    # Gamma -> HSV
+    links.new(gamma_node.outputs['Color'], hsv_node.inputs['Color'])
+
+    # HSV -> Subsurface Radius
+    links.new(hsv_node.outputs['Color'], principled.inputs[9])
+
+    print(f"Материал {mat.name} успешно обновлён!")
+
+# Подповерхностное рассеивание в легкопроницаемых блоках (сильное SSS)
+def setup_sss_sparse(mat):
+  
+    tree = mat.node_tree
+    nodes = tree.nodes
+    links = tree.links
+    
+    # 1. Проверка: не настроен ли он уже?
+    # Если в нодах уже есть фрейм с названием "Auto_SSS_Sparse", выходим
+    if "Auto_SSS_Sparse" in nodes:
+        print(f"Материал {mat.name} уже настроен.")
+        return
+
+    # 2. Ищем ключевые узлы (Якоря)
+    # Нам нужно найти Principled BSDF и Output
+    principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    
+    if not principled or not output_node:
+        print(f"В материале {mat.name} нет Principled BSDF или Output!")
+        return
+
+    # 3. Ищем текстуру цвета (Albedo)
+    # Ищем, что подключено во вход 'Base Color' у Principled BSDF
+    base_color_socket = principled.inputs['Base Color']
+    image_node = None
+    
+    if base_color_socket.is_linked:
+        # Берём узел, от которого идёт связь
+        image_node = base_color_socket.links[0].from_node
+        # Проверяем, точно ли это картинка
+        if image_node.type != 'TEX_IMAGE':
+            print(f"В {mat.name} к цвету подключена не картинка, а {image_node.type}")
+            # Можно прервать или продолжить, но лучше прервать пока
+            # return 
+    else:
+        print(f"В {mat.name} нет текстуры, подключенной к Base Color")
+        return
+
+    # 4. Донастраиваем PrincipledBSDF
+    principled.subsurface_method = 'BURLEY'
+    principled.inputs[8].default_value = 1.0
+    principled.inputs[10].default_value = 1.0
+
+    # ==========================================
+    # 5. СОЗДАНИЕ НОВЫХ НОД (как на скриншоте)
+    # ==========================================
+    
+    # Создаем Фрейм
+    frame = nodes.new('NodeFrame')
+    frame.name = "Auto_SSS_Sparse"
+    frame.label = "Auto SSS Sparse"
+    
+    # Gamma (чтобы линейную картинку получить)
+    gamma_node = nodes.new('ShaderNodeGamma')
+    gamma_node.inputs['Gamma'].default_value = 0.4545
+    gamma_node.parent = frame
+    gamma_node.location = (principled.location.x, principled.location.y - 500)
+    
+    # Hue/Saturation (для насыщенности SSS)
+    hsv_node = nodes.new('ShaderNodeHueSaturation')
+    hsv_node.inputs['Saturation'].default_value = 3.0
+    hsv_node.inputs['Value'].default_value = 2.0
+    hsv_node.parent = frame
+    hsv_node.location = (principled.location.x + 200, principled.location.y - 500)
+
+    # ==========================================
+    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # ==========================================
+
+    # Текстура -> Gamma
+    links.new(image_node.outputs['Color'], gamma_node.inputs['Color'])
+
+    # Gamma -> HSV
+    links.new(gamma_node.outputs['Color'], hsv_node.inputs['Color'])
+
+    # HSV -> Subsurface Radius
+    links.new(hsv_node.outputs['Color'], principled.inputs[9])
+
+    print(f"Материал {mat.name} успешно обновлён!")
+
 # Запуск донастройки материалов
 def auto_configure_materials():
     print("--- Запуск конфигуратора материалов ---")
@@ -1167,6 +1380,12 @@ def auto_configure_materials():
 
         if clean_name in LIST_ICE:
             setup_ice(mat)
+
+        if clean_name in LIST_SSS_DENSE:
+            setup_sss_dense(mat)
+
+        if clean_name in LIST_SSS_SPARSE:
+            setup_sss_sparse(mat)
 
 # Изменение шейдинга на «плоский»
 def set_flat_shading_for_all():
