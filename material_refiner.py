@@ -397,8 +397,10 @@ LIST_SSS_DENSE = {
     "white_wool",
     "yellow_wool",
     # Остальное
+    "honeycomb_block",
     "wet_sponge",
     "snow",
+    "powder_snow",
     "cake_side",
     "cake_top",
 }
@@ -406,10 +408,8 @@ LIST_SSS_DENSE = {
 # Подповерхностное рассеивание в легкопроницаемых блоках (сильное SSS)
 LIST_SSS_SPARSE = {
     "sponge",
-    "powder_snow",
     "hay_block_side",
     "hay_block_top",
-    "honeycomb_block",
     "packed_ice",
     "blue_ice",
     "frosted_ice_0",
@@ -417,6 +417,10 @@ LIST_SSS_SPARSE = {
     "frosted_ice_2",
     "frosted_ice_3",
 }
+
+# LIST_GOLD = {
+#     "gold_block",
+# }
 
 # ==========================================
 # ОПРЕДЕЛЕНИЕ ФУНКЦИЙ
@@ -1340,6 +1344,22 @@ def setup_sss_sparse(mat):
 
     print(f"Материал {mat.name} успешно обновлён!")
 
+# Золото
+# def setup_gold(mat):
+#    # Получаем доступ к нодам
+#     nodes = mat.node_tree.nodes
+#     
+#     # Ищем Principled BSDF
+#     principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+#     
+#     if principled:
+#         try:
+#             # Устанавливаем шероховатость поменьше
+#             principled.inputs['Roughness'].default_value = 0.1
+#             print(f"[Шероховатость] {mat.name}: Шероховатость установлена на 0.1")
+#         except KeyError:
+#             print(f"[Ошибка] У материала {mat.name} нет слота 'Roughness'")
+
 # Запуск донастройки материалов
 def auto_configure_materials():
     print("--- Запуск конфигуратора материалов ---")
@@ -1386,6 +1406,9 @@ def auto_configure_materials():
 
         if clean_name in LIST_SSS_SPARSE:
             setup_sss_sparse(mat)
+
+        # if clean_name in LIST_GOLD:
+        #     setup_gold(mat)
 
 # Изменение шейдинга на «плоский»
 def set_flat_shading_for_all():
