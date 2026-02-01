@@ -419,6 +419,28 @@ def reset_material_to_vanilla(mat):
         # Обычно 'BSDF' - это первый выход, 'Surface' - первый вход.
         links.new(principled.outputs[0], output_node.inputs[0])
 
+    # 5. Ищем текстуру цвета (Albedo), чтобы вернуть альфу
+    # Ищем, что подключено во вход 'Base Color' у Principled BSDF
+    base_color_socket = principled.inputs['Base Color']
+    image_node = None
+    
+    if base_color_socket.is_linked:
+        # Берём узел, от которого идёт связь
+        image_node = base_color_socket.links[0].from_node
+        # Проверяем, точно ли это картинка
+        if image_node.type != 'TEX_IMAGE':
+            print(f"В {mat.name} к цвету подключена не картинка, а {image_node.type}")
+            # Можно прервать или продолжить, но лучше прервать пока
+            # return 
+    else:
+        print(f"В {mat.name} нет текстуры, подключенной к Base Color")
+        return
+
+    # 6. Возвращаем альфу
+    if image_node.image:
+        # Меняем режим альфы на "None" (игнорировать прозрачность)
+        image_node.image.alpha_mode = 'STRAIGHT'
+
     return True
   
 # Запуск сброса автоматизации  
@@ -710,8 +732,13 @@ def setup_stained_glass(mat):
         print(f"В {mat.name} нет текстуры, подключенной к Base Color")
         return
     
+    # 4. Отключим альфу, чтобы текстура не затемнялась, а прозрачность пропала
+    if image_node.image:
+        # Меняем режим альфы на "None" (игнорировать прозрачность)
+        image_node.image.alpha_mode = 'NONE'
+    
     # ==========================================
-    # 4. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
+    # 5. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
     # ==========================================
     
     try:
@@ -722,7 +749,7 @@ def setup_stained_glass(mat):
         print(f"[Ошибка] У материала {mat.name} нет слота 'Transmission Weight'")
 
     # ==========================================
-    # 5. СОЗДАНИЕ НОВЫХ НОД
+    # 6. СОЗДАНИЕ НОВЫХ НОД
     # ==========================================
     
     # Создаем Фрейм
@@ -741,16 +768,12 @@ def setup_stained_glass(mat):
     add_node.location = (principled.location.x + 300, principled.location.y - 400)
 
     # ==========================================
-    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # 7. СОЕДИНЕНИЕ НОД (Линковка)
     # ==========================================
     
     # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
     if output_node.inputs['Surface'].is_linked:
         tree.links.remove(output_node.inputs['Surface'].links[0])
-        
-    # Очистим Alpha: она больше не нужна: за прозрачность будет отвечать Transmission
-    if principled.inputs['Alpha'].is_linked:
-        tree.links.remove(principled.inputs['Alpha'].links[0])
 
     # Подключаем необходимое к Glossy BSDF
     links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
@@ -805,8 +828,13 @@ def setup_stained_glass_pane_top(mat):
         print(f"В {mat.name} нет текстуры, подключенной к Base Color")
         return
     
+    # 4. Отключим альфу, чтобы текстура не затемнялась, а прозрачность пропала
+    if image_node.image:
+        # Меняем режим альфы на "None" (игнорировать прозрачность)
+        image_node.image.alpha_mode = 'NONE'
+    
     # ==========================================
-    # 4. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
+    # 5. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
     # ==========================================
     
     try:
@@ -817,7 +845,7 @@ def setup_stained_glass_pane_top(mat):
         print(f"[Ошибка] У материала {mat.name} нет слота 'Transmission Weight'")
 
     # ==========================================
-    # 5. СОЗДАНИЕ НОВЫХ НОД
+    # 6. СОЗДАНИЕ НОВЫХ НОД
     # ==========================================
     
     # Создаем Фрейм
@@ -836,16 +864,12 @@ def setup_stained_glass_pane_top(mat):
     add_node.location = (principled.location.x + 300, principled.location.y - 400)
 
     # ==========================================
-    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # 7. СОЕДИНЕНИЕ НОД (Линковка)
     # ==========================================
     
     # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
     if output_node.inputs['Surface'].is_linked:
         tree.links.remove(output_node.inputs['Surface'].links[0])
-        
-    # Очистим Alpha: она больше не нужна: за прозрачность будет отвечать Transmission
-    if principled.inputs['Alpha'].is_linked:
-        tree.links.remove(principled.inputs['Alpha'].links[0])
 
     # Подключаем необходимое к Glossy BSDF
     links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
@@ -1039,8 +1063,13 @@ def setup_ice(mat):
         print(f"В {mat.name} нет текстуры, подключенной к Base Color")
         return
     
+    # 4. Отключим альфу, чтобы текстура не затемнялась, а прозрачность пропала
+    if image_node.image:
+        # Меняем режим альфы на "None" (игнорировать прозрачность)
+        image_node.image.alpha_mode = 'NONE'
+    
     # ==========================================
-    # 4. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
+    # 5. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
     # ==========================================
     
     try:
@@ -1058,7 +1087,7 @@ def setup_ice(mat):
         print(f"[Ошибка] У материала {mat.name} нет слота 'IOR'")
 
     # ==========================================
-    # 5. СОЗДАНИЕ НОВЫХ НОД
+    # 6. СОЗДАНИЕ НОВЫХ НОД
     # ==========================================
     
     # Создаем Фрейм
@@ -1077,16 +1106,12 @@ def setup_ice(mat):
     add_node.location = (principled.location.x + 300, principled.location.y - 400)
 
     # ==========================================
-    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # 7. СОЕДИНЕНИЕ НОД (Линковка)
     # ==========================================
     
     # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
     if output_node.inputs['Surface'].is_linked:
         tree.links.remove(output_node.inputs['Surface'].links[0])
-        
-    # Очистим Alpha: она больше не нужна: за прозрачность будет отвечать Transmission
-    if principled.inputs['Alpha'].is_linked:
-        tree.links.remove(principled.inputs['Alpha'].links[0])
 
     # Подключаем необходимое к Glossy BSDF
     links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
