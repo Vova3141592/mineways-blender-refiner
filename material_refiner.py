@@ -352,7 +352,7 @@ LIST_STAINED_GLASS_PANE_TOP = {
     "yellow_stained_glass_pane_top",
 }
 
-# Обычное стекло
+# Обычное стекло (лицевая сторона)
 LIST_GLASS = {
     "glass",
 }
@@ -360,6 +360,11 @@ LIST_GLASS = {
 # Обычное стекло (верхушка панели)
 LIST_GLASS_PANE_TOP = {
     "glass_pane_top",
+}
+
+# Лёд (обычный прозрачный)
+LIST_ICE = {
+    "ice",
 }
 
 # ==========================================
@@ -993,6 +998,110 @@ def setup_glass_pane_top(mat):
 
     print(f"Материал {mat.name} успешно обновлён!")
 
+# Лёд (обычный прозрачный)
+def setup_ice(mat):
+  
+    tree = mat.node_tree
+    nodes = tree.nodes
+    links = tree.links
+    
+    # 1. Проверка: не настроен ли он уже?
+    # Если в нодах уже есть фрейм с названием "Auto_Ice", выходим
+    if "Auto_Ice" in nodes:
+        print(f"Материал {mat.name} уже настроен.")
+        return
+
+    # 2. Ищем ключевые узлы (Якоря)
+    # Нам нужно найти Principled BSDF и Output
+    principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    separate_node = next((n for n in nodes if n.type == 'SEPARATE_COLOR'), None)
+    normal_node = next((n for n in nodes if n.type == 'NORMAL_MAP'), None)
+    
+    if not principled or not output_node:
+        print(f"В материале {mat.name} нет Principled BSDF или Output!")
+        return
+
+    # 3. Ищем текстуру цвета (Albedo)
+    # Ищем, что подключено во вход 'Base Color' у Principled BSDF
+    base_color_socket = principled.inputs['Base Color']
+    image_node = None
+    
+    if base_color_socket.is_linked:
+        # Берём узел, от которого идёт связь
+        image_node = base_color_socket.links[0].from_node
+        # Проверяем, точно ли это картинка
+        if image_node.type != 'TEX_IMAGE':
+            print(f"В {mat.name} к цвету подключена не картинка, а {image_node.type}")
+            # Можно прервать или продолжить, но лучше прервать пока
+            # return 
+    else:
+        print(f"В {mat.name} нет текстуры, подключенной к Base Color")
+        return
+    
+    # ==========================================
+    # 4. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
+    # ==========================================
+    
+    try:
+        # Устанавливаем прозрачность
+        principled.inputs[18].default_value = 1.0
+        print(f"[Прозрачность] {mat.name}: Прозрачность установлена на 1")
+    except KeyError:
+        print(f"[Ошибка] У материала {mat.name} нет слота 'Transmission Weight'")
+
+    try:
+        # Меняем IOR на IOR льда (1.31)
+        principled.inputs['IOR'].default_value = 1.31
+        print(f"[IOR] {mat.name}: IOR установлена на 1.31")
+    except KeyError:
+        print(f"[Ошибка] У материала {mat.name} нет слота 'IOR'")
+
+    # ==========================================
+    # 5. СОЗДАНИЕ НОВЫХ НОД
+    # ==========================================
+    
+    # Создаем Фрейм
+    frame = nodes.new('NodeFrame')
+    frame.name = "Auto_Ice"
+    frame.label = "Auto Ice"
+    
+    # Glossy BSDF (для отражений)
+    glossy_node = nodes.new('ShaderNodeBsdfAnisotropic')
+    glossy_node.parent = frame
+    glossy_node.location = (principled.location.x, principled.location.y - 400)
+    
+    # Add Shader (соединяем отражение с обычным материалом)
+    add_node = nodes.new('ShaderNodeAddShader')
+    add_node.parent = frame
+    add_node.location = (principled.location.x + 300, principled.location.y - 400)
+
+    # ==========================================
+    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # ==========================================
+    
+    # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
+    if output_node.inputs['Surface'].is_linked:
+        tree.links.remove(output_node.inputs['Surface'].links[0])
+        
+    # Очистим Alpha: она больше не нужна: за прозрачность будет отвечать Transmission
+    if principled.inputs['Alpha'].is_linked:
+        tree.links.remove(principled.inputs['Alpha'].links[0])
+
+    # Подключаем необходимое к Glossy BSDF
+    links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
+    links.new(separate_node.outputs['Red'], glossy_node.inputs['Roughness'])
+    links.new(normal_node.outputs['Normal'], glossy_node.inputs['Normal'])
+    
+    # Смешаем Principled BSDF и Glossy BSDF
+    links.new(principled.outputs['BSDF'], add_node.inputs[0])
+    links.new(glossy_node.outputs['BSDF'], add_node.inputs[1])
+    
+    # Add -> Output
+    links.new(add_node.outputs['Shader'], output_node.inputs['Surface'])
+
+    print(f"Материал {mat.name} успешно обновлён!")
+
 # Запуск донастройки материалов
 def auto_configure_materials():
     print("--- Запуск конфигуратора материалов ---")
@@ -1030,6 +1139,9 @@ def auto_configure_materials():
 
         if clean_name in LIST_GLASS_PANE_TOP:
             setup_glass_pane_top(mat)
+
+        if clean_name in LIST_ICE:
+            setup_ice(mat)
 
 # Изменение шейдинга на «плоский»
 def set_flat_shading_for_all():
