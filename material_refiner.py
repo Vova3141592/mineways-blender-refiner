@@ -313,43 +313,51 @@ LIST_WATER = {
 
 # Цветное стекло (лицевая сторона)
 LIST_STAINED_GLASS = {
-    "tinted_glass",
-    "black_stained_glass",
     "blue_stained_glass",
     "brown_stained_glass",
     "cyan_stained_glass",
-    "gray_stained_glass",
     "green_stained_glass",
     "light_blue_stained_glass",
-    "light_gray_stained_glass",
     "lime_stained_glass",
     "magenta_stained_glass",
     "orange_stained_glass",
     "pink_stained_glass",
     "purple_stained_glass",
     "red_stained_glass",
-    "white_stained_glass",
     "yellow_stained_glass",
 }
 
 # Цветное стекло (верхушка панели)
 LIST_STAINED_GLASS_PANE_TOP = {
-    "black_stained_glass_pane_top",
     "blue_stained_glass_pane_top",
     "brown_stained_glass_pane_top",
     "cyan_stained_glass_pane_top",
-    "gray_stained_glass_pane_top",
     "green_stained_glass_pane_top",
     "light_blue_stained_glass_pane_top",
-    "light_gray_stained_glass_pane_top",
     "lime_stained_glass_pane_top",
     "magenta_stained_glass_pane_top",
     "orange_stained_glass_pane_top",
     "pink_stained_glass_pane_top",
     "purple_stained_glass_pane_top",
     "red_stained_glass_pane_top",
-    "white_stained_glass_pane_top",
     "yellow_stained_glass_pane_top",
+}
+
+#Чёрно-белое стекло (лицевая сторона)
+LIST_ACHROMATIC_GLASS = {
+    "tinted_glass",
+    "black_stained_glass",
+    "gray_stained_glass",
+    "light_gray_stained_glass",
+    "white_stained_glass",
+}
+
+#Чёрно-белое стекло (верхушка панели)
+LIST_ACHROMATIC_GLASS_PANE_TOP = {
+    "black_stained_glass_pane_top",
+    "gray_stained_glass_pane_top",
+    "light_gray_stained_glass_pane_top",
+    "white_stained_glass_pane_top",
 }
 
 # Обычное стекло (лицевая сторона)
@@ -791,56 +799,84 @@ def setup_stained_glass(mat):
     if image_node.image:
         # Меняем режим альфы на "None" (игнорировать прозрачность)
         image_node.image.alpha_mode = 'NONE'
-    
-    # ==========================================
-    # 5. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
-    # ==========================================
-    
-    try:
-        # Устанавливаем прозрачность
-        principled.inputs[18].default_value = 1.0
-        print(f"[Прозрачность] {mat.name}: Прозрачность установлена на 1")
-    except KeyError:
-        print(f"[Ошибка] У материала {mat.name} нет слота 'Transmission Weight'")
 
     # ==========================================
-    # 6. СОЗДАНИЕ НОВЫХ НОД
+    # 5. СОЗДАНИЕ НОВЫХ НОД
     # ==========================================
     
     # Создаем Фрейм
     frame = nodes.new('NodeFrame')
     frame.name = "Auto_Stained_Glass"
     frame.label = "Auto Stained Glass"
-    
-    # Glossy BSDF (для отражений)
+
+    # Separate Color (чтобы насыщенность и яркость максимизировать)
+    separate_hsv_node = nodes.new('ShaderNodeSeparateColor')
+    separate_hsv_node.mode = 'HSV'
+    separate_hsv_node.parent = frame
+    separate_hsv_node.location = (principled.location.x, principled.location.y - 400)
+
+    # Combine Color (чтобы насыщенность и яркость максимизировать)
+    combine_node = nodes.new('ShaderNodeCombineColor')
+    combine_node.mode = 'HSV'
+    combine_node.inputs[1].default_value = 0.4 # Насыщенность стекла
+    combine_node.inputs[2].default_value = 1.0 # Светлота стекла
+    combine_node.parent = frame
+    combine_node.location = (principled.location.x + 200, principled.location.y - 400)
+
+    # Fresnel (чтобы отражения были только под определённым углом. Это нужно для реалистичности)   
+    fresnel_node = nodes.new('ShaderNodeFresnel')
+    fresnel_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    fresnel_node.parent = frame
+    fresnel_node.location = (principled.location.x + 400, principled.location.y - 400)
+
+    # Refraction BSDF (для преломления света)
+    refraction_node = nodes.new('ShaderNodeBsdfRefraction')
+    refraction_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    refraction_node.parent = frame
+    refraction_node.location = (principled.location.x + 400, principled.location.y - 600)
+
+    # Glossy BSDF (для отражений и бликов)
     glossy_node = nodes.new('ShaderNodeBsdfAnisotropic')
+    glossy_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
     glossy_node.parent = frame
-    glossy_node.location = (principled.location.x, principled.location.y - 400)
-    
-    # Add Shader (соединяем отражение с обычным материалом)
-    add_node = nodes.new('ShaderNodeAddShader')
-    add_node.parent = frame
-    add_node.location = (principled.location.x + 300, principled.location.y - 400)
+    glossy_node.location = (principled.location.x + 400, principled.location.y - 800)
+
+    # Mix Shader (Угол Френеля + преломление + отражения = реалистичное стекло)
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.parent = frame
+    mix_node.location = (principled.location.x + 600, principled.location.y - 400)
 
     # ==========================================
-    # 7. СОЕДИНЕНИЕ НОД (Линковка)
+    # 6. СОЕДИНЕНИЕ НОД (Линковка)
     # ==========================================
     
     # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
     if output_node.inputs['Surface'].is_linked:
         tree.links.remove(output_node.inputs['Surface'].links[0])
 
-    # Подключаем необходимое к Glossy BSDF
-    links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
-    links.new(separate_node.outputs['Red'], glossy_node.inputs['Roughness'])
+    # Обработка базового цвета
+    links.new(image_node.outputs['Color'], separate_hsv_node.inputs['Color'])
+    links.new(separate_hsv_node.outputs[0], combine_node.inputs[0])
+
+    # Подключаем все нормальные карты
+    links.new(normal_node.outputs['Normal'], fresnel_node.inputs['Normal'])
+    links.new(normal_node.outputs['Normal'], refraction_node.inputs['Normal'])
     links.new(normal_node.outputs['Normal'], glossy_node.inputs['Normal'])
+
+    # Подключаем все карты шероховатостей
+    links.new(separate_node.outputs['Red'], refraction_node.inputs['Roughness'])
+    links.new(separate_node.outputs['Red'], glossy_node.inputs['Roughness'])
+
+    # Устанавливаем обработанный цвет для преломления
+    links.new(combine_node.outputs['Color'], refraction_node.inputs['Color'])
+
+    # Соединяем все шейдеры в миксере для реалистичного стекла
+    links.new(fresnel_node.outputs['Factor'], mix_node.inputs[0]) # Первый вход
+    links.new(refraction_node.outputs['BSDF'], mix_node.inputs[1]) # Второй вход
+    links.new(glossy_node.outputs['BSDF'], mix_node.inputs[2]) # Третий вход
     
-    # Смешаем Principled BSDF и Glossy BSDF
-    links.new(principled.outputs['BSDF'], add_node.inputs[0])
-    links.new(glossy_node.outputs['BSDF'], add_node.inputs[1])
-    
-    # Add -> Output
-    links.new(add_node.outputs['Shader'], output_node.inputs['Surface'])
+    # Mix -> Output
+    links.new(mix_node.outputs['Shader'], output_node.inputs['Surface'])
 
     print(f"Материал {mat.name} успешно обновлён!")
 
@@ -887,17 +923,127 @@ def setup_stained_glass_pane_top(mat):
     if image_node.image:
         # Меняем режим альфы на "None" (игнорировать прозрачность)
         image_node.image.alpha_mode = 'NONE'
-    
+
     # ==========================================
-    # 5. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
+    # 5. СОЗДАНИЕ НОВЫХ НОД
     # ==========================================
     
-    try:
-        # Устанавливаем прозрачность
-        principled.inputs[18].default_value = 1.0
-        print(f"[Прозрачность] {mat.name}: Прозрачность установлена на 1")
-    except KeyError:
-        print(f"[Ошибка] У материала {mat.name} нет слота 'Transmission Weight'")
+    # Создаем Фрейм
+    frame = nodes.new('NodeFrame')
+    frame.name = "Auto_Stained_Glass_Pane_Top"
+    frame.label = "Auto Stained Glass Pane Top"
+
+    # Separate Color (чтобы насыщенность и яркость максимизировать)
+    separate_hsv_node = nodes.new('ShaderNodeSeparateColor')
+    separate_hsv_node.mode = 'HSV'
+    separate_hsv_node.parent = frame
+    separate_hsv_node.location = (principled.location.x, principled.location.y - 400)
+
+    # Combine Color (чтобы насыщенность и яркость максимизировать)
+    combine_node = nodes.new('ShaderNodeCombineColor')
+    combine_node.mode = 'HSV'
+    combine_node.inputs[1].default_value = 0.4 # Насыщенность стекла
+    combine_node.inputs[2].default_value = 1.0 # Светлота стекла
+    combine_node.parent = frame
+    combine_node.location = (principled.location.x + 200, principled.location.y - 400)
+
+    # Fresnel (чтобы отражения были только под определённым углом. Это нужно для реалистичности)   
+    fresnel_node = nodes.new('ShaderNodeFresnel')
+    fresnel_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    fresnel_node.parent = frame
+    fresnel_node.location = (principled.location.x + 400, principled.location.y - 400)
+
+    # Refraction BSDF (для преломления света)
+    refraction_node = nodes.new('ShaderNodeBsdfRefraction')
+    refraction_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    refraction_node.inputs['Roughness'].default_value = 0.047 # Чтобы «срез» не был слишком гладким
+    refraction_node.parent = frame
+    refraction_node.location = (principled.location.x + 400, principled.location.y - 600)
+
+    # Glossy BSDF (для отражений и бликов)
+    glossy_node = nodes.new('ShaderNodeBsdfAnisotropic')
+    glossy_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    glossy_node.parent = frame
+    glossy_node.location = (principled.location.x + 400, principled.location.y - 800)
+
+    # Mix Shader (Угол Френеля + преломление + отражения = реалистичное стекло)
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.parent = frame
+    mix_node.location = (principled.location.x + 600, principled.location.y - 400)
+
+    # ==========================================
+    # 6. СОЕДИНЕНИЕ НОД (Линковка)
+    # ==========================================
+    
+    # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
+    if output_node.inputs['Surface'].is_linked:
+        tree.links.remove(output_node.inputs['Surface'].links[0])
+
+    # Обработка базового цвета
+    links.new(image_node.outputs['Color'], separate_hsv_node.inputs['Color'])
+    links.new(separate_hsv_node.outputs[0], combine_node.inputs[0])
+
+    # Устанавливаем обработанный цвет для преломления
+    links.new(combine_node.outputs['Color'], refraction_node.inputs['Color'])
+
+    # Соединяем все шейдеры в миксере для реалистичного стекла
+    links.new(fresnel_node.outputs['Factor'], mix_node.inputs[0]) # Первый вход
+    links.new(refraction_node.outputs['BSDF'], mix_node.inputs[1]) # Второй вход
+    links.new(glossy_node.outputs['BSDF'], mix_node.inputs[2]) # Третий вход
+    
+    # Mix -> Output
+    links.new(mix_node.outputs['Shader'], output_node.inputs['Surface'])
+
+    print(f"Материал {mat.name} успешно обновлён!")
+
+# Чёрно-белое стекло (лицевая сторона)
+def setup_achromatic_glass(mat):
+  
+    tree = mat.node_tree
+    nodes = tree.nodes
+    links = tree.links
+    
+    # 1. Проверка: не настроен ли он уже?
+    # Если в нодах уже есть фрейм с названием "Auto_Achromatic_Glass", выходим
+    if "Auto_Achromatic_Glass" in nodes:
+        print(f"Материал {mat.name} уже настроен.")
+        return
+
+    # 2. Ищем ключевые узлы (Якоря)
+    # Нам нужно найти Principled BSDF и Output
+    principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+    separate_node = next((n for n in nodes if n.type == 'SEPARATE_COLOR'), None)
+    normal_node = next((n for n in nodes if n.type == 'NORMAL_MAP'), None)
+    
+    if not principled or not output_node:
+        print(f"В материале {mat.name} нет Principled BSDF или Output!")
+        return
+
+    # 3. Ищем текстуру цвета (Albedo)
+    # Ищем, что подключено во вход 'Base Color' у Principled BSDF
+    base_color_socket = principled.inputs['Base Color']
+    image_node = None
+    
+    if base_color_socket.is_linked:
+        # Берём узел, от которого идёт связь
+        image_node = base_color_socket.links[0].from_node
+        # Проверяем, точно ли это картинка
+        if image_node.type != 'TEX_IMAGE':
+            print(f"В {mat.name} к цвету подключена не картинка, а {image_node.type}")
+            # Можно прервать или продолжить, но лучше прервать пока
+            # return 
+    else:
+        print(f"В {mat.name} нет текстуры, подключенной к Base Color")
+        return
+    
+    # 4. Отключим альфу, чтобы текстура не затемнялась, а прозрачность пропала
+    if image_node.image:
+        # Меняем режим альфы на "None" (игнорировать прозрачность)
+        image_node.image.alpha_mode = 'NONE'
+
+    # 5. Отключим прохождение света для Principled BSDF: пусть это будет чисто слой краски
+    principled.inputs[18].default_value = 0.0
 
     # ==========================================
     # 6. СОЗДАНИЕ НОВЫХ НОД
@@ -905,18 +1051,38 @@ def setup_stained_glass_pane_top(mat):
     
     # Создаем Фрейм
     frame = nodes.new('NodeFrame')
-    frame.name = "Auto_Stained_Glass_Pane_Top"
-    frame.label = "Auto Stained Glass Pane Top"
-    
-    # Glossy BSDF (для отражений)
+    frame.name = "Auto_Achromatic_Glass"
+    frame.label = "Auto Achromatic Glass"
+
+    # Fresnel (чтобы отражения были только под определённым углом. Это нужно для реалистичности)   
+    fresnel_node = nodes.new('ShaderNodeFresnel')
+    fresnel_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    fresnel_node.parent = frame
+    fresnel_node.location = (principled.location.x, principled.location.y - 400)
+
+    # Refraction BSDF (для преломления света)
+    refraction_node = nodes.new('ShaderNodeBsdfRefraction')
+    refraction_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    refraction_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    refraction_node.parent = frame
+    refraction_node.location = (principled.location.x, principled.location.y - 600)
+
+    # Glossy BSDF (для отражений и бликов)
     glossy_node = nodes.new('ShaderNodeBsdfAnisotropic')
+    glossy_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
     glossy_node.parent = frame
-    glossy_node.location = (principled.location.x, principled.location.y - 400)
-    
-    # Add Shader (соединяем отражение с обычным материалом)
-    add_node = nodes.new('ShaderNodeAddShader')
-    add_node.parent = frame
-    add_node.location = (principled.location.x + 300, principled.location.y - 400)
+    glossy_node.location = (principled.location.x, principled.location.y - 800)
+
+    # Mix Shader (Угол Френеля + преломление + отражения = реалистичное стекло)
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.parent = frame
+    mix_node.location = (principled.location.x + 200, principled.location.y - 400)
+
+    # Final Mix Shader (Principled BSDF + реалистичное стекло = белое стекло)
+    final_mix_node = nodes.new('ShaderNodeMixShader')
+    final_mix_node.inputs['Factor'].default_value = 0.1
+    final_mix_node.parent = frame
+    final_mix_node.location = (principled.location.x + 400, principled.location.y - 400)
 
     # ==========================================
     # 7. СОЕДИНЕНИЕ НОД (Линковка)
@@ -926,15 +1092,135 @@ def setup_stained_glass_pane_top(mat):
     if output_node.inputs['Surface'].is_linked:
         tree.links.remove(output_node.inputs['Surface'].links[0])
 
-    # Подключаем необходимое к Glossy BSDF
-    links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
+    # Подключаем все нормальные карты
+    links.new(normal_node.outputs['Normal'], fresnel_node.inputs['Normal'])
+    links.new(normal_node.outputs['Normal'], refraction_node.inputs['Normal'])
+    links.new(normal_node.outputs['Normal'], glossy_node.inputs['Normal'])
+
+    # Подключаем все карты шероховатостей
+    links.new(separate_node.outputs['Red'], refraction_node.inputs['Roughness'])
+    links.new(separate_node.outputs['Red'], glossy_node.inputs['Roughness'])
+
+    # Соединяем все шейдеры в миксере для реалистичного стекла
+    links.new(fresnel_node.outputs['Factor'], mix_node.inputs[0]) # Первый вход
+    links.new(refraction_node.outputs['BSDF'], mix_node.inputs[1]) # Второй вход
+    links.new(glossy_node.outputs['BSDF'], mix_node.inputs[2]) # Третий вход
+
+    # Mix -> Final Mix (добавляем на поверхность стекла краску)
+    links.new(mix_node.outputs['Shader'], final_mix_node.inputs[1])
+    links.new(principled.outputs['BSDF'], final_mix_node.inputs[2])
+
+    # Final Mix -> Output
+    links.new(final_mix_node.outputs['Shader'], output_node.inputs['Surface'])
+
+    print(f"Материал {mat.name} успешно обновлён!")
+
+# Чёрно-белое стекло (верхушка панели)
+def setup_achromatic_glass_pane_top(mat):
+  
+    tree = mat.node_tree
+    nodes = tree.nodes
+    links = tree.links
     
-    # Смешаем Principled BSDF и Glossy BSDF
-    links.new(principled.outputs['BSDF'], add_node.inputs[0])
-    links.new(glossy_node.outputs['BSDF'], add_node.inputs[1])
+    # 1. Проверка: не настроен ли он уже?
+    # Если в нодах уже есть фрейм с названием "Auto_Achromatic_Glass_Pane_Top", выходим
+    if "Auto_Achromatic_Glass_Pane_Top" in nodes:
+        print(f"Материал {mat.name} уже настроен.")
+        return
+
+    # 2. Ищем ключевые узлы (Якоря)
+    # Нам нужно найти Principled BSDF и Output
+    principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
     
-    # Add -> Output
-    links.new(add_node.outputs['Shader'], output_node.inputs['Surface'])
+    if not principled or not output_node:
+        print(f"В материале {mat.name} нет Principled BSDF или Output!")
+        return
+
+    # 3. Ищем текстуру цвета (Albedo)
+    # Ищем, что подключено во вход 'Base Color' у Principled BSDF
+    base_color_socket = principled.inputs['Base Color']
+    image_node = None
+    
+    if base_color_socket.is_linked:
+        # Берём узел, от которого идёт связь
+        image_node = base_color_socket.links[0].from_node
+        # Проверяем, точно ли это картинка
+        if image_node.type != 'TEX_IMAGE':
+            print(f"В {mat.name} к цвету подключена не картинка, а {image_node.type}")
+            # Можно прервать или продолжить, но лучше прервать пока
+            # return 
+    else:
+        print(f"В {mat.name} нет текстуры, подключенной к Base Color")
+        return
+    
+    # 4. Отключим альфу, чтобы текстура не затемнялась, а прозрачность пропала
+    if image_node.image:
+        # Меняем режим альфы на "None" (игнорировать прозрачность)
+        image_node.image.alpha_mode = 'NONE'
+
+    # 5. Отключим прохождение света для Principled BSDF: пусть это будет чисто слой краски
+    principled.inputs[18].default_value = 0.0
+
+    # ==========================================
+    # 6. СОЗДАНИЕ НОВЫХ НОД
+    # ==========================================
+    
+    # Создаем Фрейм
+    frame = nodes.new('NodeFrame')
+    frame.name = "Auto_Achromatic_Glass_Pane_Top"
+    frame.label = "Auto Achromatic Glass Pane Top"
+
+    # Fresnel (чтобы отражения были только под определённым углом. Это нужно для реалистичности)   
+    fresnel_node = nodes.new('ShaderNodeFresnel')
+    fresnel_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    fresnel_node.parent = frame
+    fresnel_node.location = (principled.location.x, principled.location.y - 400)
+
+    # Refraction BSDF (для преломления света)
+    refraction_node = nodes.new('ShaderNodeBsdfRefraction')
+    refraction_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
+    refraction_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    refraction_node.inputs['Roughness'].default_value = 0.047 # Чтобы «срез» не был слишком гладким
+    refraction_node.parent = frame
+    refraction_node.location = (principled.location.x, principled.location.y - 600)
+
+    # Glossy BSDF (для отражений и бликов)
+    glossy_node = nodes.new('ShaderNodeBsdfAnisotropic')
+    glossy_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
+    glossy_node.parent = frame
+    glossy_node.location = (principled.location.x, principled.location.y - 800)
+
+    # Mix Shader (Угол Френеля + преломление + отражения = реалистичное стекло)
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.parent = frame
+    mix_node.location = (principled.location.x + 200, principled.location.y - 400)
+
+    # Final Mix Shader (Principled BSDF + реалистичное стекло = белое стекло)
+    final_mix_node = nodes.new('ShaderNodeMixShader')
+    final_mix_node.inputs['Factor'].default_value = 0.1
+    final_mix_node.parent = frame
+    final_mix_node.location = (principled.location.x + 400, principled.location.y - 400)
+
+    # ==========================================
+    # 7. СОЕДИНЕНИЕ НОД (Линковка)
+    # ==========================================
+    
+    # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
+    if output_node.inputs['Surface'].is_linked:
+        tree.links.remove(output_node.inputs['Surface'].links[0])
+
+    # Соединяем все шейдеры в миксере для реалистичного стекла
+    links.new(fresnel_node.outputs['Factor'], mix_node.inputs[0]) # Первый вход
+    links.new(refraction_node.outputs['BSDF'], mix_node.inputs[1]) # Второй вход
+    links.new(glossy_node.outputs['BSDF'], mix_node.inputs[2]) # Третий вход
+
+    # Mix -> Final Mix (добавляем на поверхность стекла краску)
+    links.new(mix_node.outputs['Shader'], final_mix_node.inputs[1])
+    links.new(principled.outputs['BSDF'], final_mix_node.inputs[2])
+
+    # Final Mix -> Output
+    links.new(final_mix_node.outputs['Shader'], output_node.inputs['Surface'])
 
     print(f"Материал {mat.name} успешно обновлён!")
 
@@ -990,6 +1276,7 @@ def setup_glass(mat):
     
     # Glass BSDF (реалистичное стекло)
     glass_node = nodes.new('ShaderNodeBsdfGlass')
+    glass_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
     glass_node.parent = frame
     glass_node.location = (principled.location.x, principled.location.y - 400)
 
@@ -1060,6 +1347,7 @@ def setup_glass_pane_top(mat):
 
     # Glass BSDF (реалистичное стекло)
     glass_node = nodes.new('ShaderNodeBsdfGlass')
+    glass_node.inputs['IOR'].default_value = 1.45 # Показатель преломления
     glass_node.inputs['Roughness'].default_value = 0.047 # Чтобы «срез» не был слишком гладким
     glass_node.parent = frame
     glass_node.location = (principled.location.x, principled.location.y - 400)
@@ -1077,7 +1365,7 @@ def setup_glass_pane_top(mat):
 
     print(f"Материал {mat.name} успешно обновлён!")
 
-# Лёд (обычный прозрачный)
+# Лёд (обычный, прозрачный)
 def setup_ice(mat):
   
     tree = mat.node_tree
@@ -1122,63 +1410,84 @@ def setup_ice(mat):
     if image_node.image:
         # Меняем режим альфы на "None" (игнорировать прозрачность)
         image_node.image.alpha_mode = 'NONE'
-    
-    # ==========================================
-    # 5. НАСТРАИВАЕМ ОБЫЧНЫЙ BSDF
-    # ==========================================
-    
-    try:
-        # Устанавливаем прозрачность
-        principled.inputs[18].default_value = 1.0
-        print(f"[Прозрачность] {mat.name}: Прозрачность установлена на 1")
-    except KeyError:
-        print(f"[Ошибка] У материала {mat.name} нет слота 'Transmission Weight'")
-
-    try:
-        # Меняем IOR на IOR льда (1.31)
-        principled.inputs['IOR'].default_value = 1.31
-        print(f"[IOR] {mat.name}: IOR установлена на 1.31")
-    except KeyError:
-        print(f"[Ошибка] У материала {mat.name} нет слота 'IOR'")
 
     # ==========================================
-    # 6. СОЗДАНИЕ НОВЫХ НОД
+    # 5. СОЗДАНИЕ НОВЫХ НОД
     # ==========================================
     
     # Создаем Фрейм
     frame = nodes.new('NodeFrame')
     frame.name = "Auto_Ice"
     frame.label = "Auto Ice"
-    
-    # Glossy BSDF (для отражений)
+
+    # Separate Color (чтобы насыщенность и яркость максимизировать)
+    separate_hsv_node = nodes.new('ShaderNodeSeparateColor')
+    separate_hsv_node.mode = 'HSV'
+    separate_hsv_node.parent = frame
+    separate_hsv_node.location = (principled.location.x, principled.location.y - 400)
+
+    # Combine Color (чтобы насыщенность и яркость максимизировать)
+    combine_node = nodes.new('ShaderNodeCombineColor')
+    combine_node.mode = 'HSV'
+    combine_node.inputs[1].default_value = 0.35 # Насыщенность льда
+    combine_node.inputs[2].default_value = 1.0 # Светлота льда
+    combine_node.parent = frame
+    combine_node.location = (principled.location.x + 200, principled.location.y - 400)
+
+    # Fresnel (чтобы отражения были только под определённым углом. Это нужно для реалистичности)   
+    fresnel_node = nodes.new('ShaderNodeFresnel')
+    fresnel_node.inputs['IOR'].default_value = 1.31 # Показатель преломления льда
+    fresnel_node.parent = frame
+    fresnel_node.location = (principled.location.x + 400, principled.location.y - 400)
+
+    # Refraction BSDF (для преломления света)
+    refraction_node = nodes.new('ShaderNodeBsdfRefraction')
+    refraction_node.inputs['IOR'].default_value = 1.31 # Показатель преломления льда
+    refraction_node.parent = frame
+    refraction_node.location = (principled.location.x + 400, principled.location.y - 600)
+
+    # Glossy BSDF (для отражений и бликов)
     glossy_node = nodes.new('ShaderNodeBsdfAnisotropic')
+    glossy_node.inputs['Color'].default_value = (1.0, 1.0, 1.0, 1.0)
     glossy_node.parent = frame
-    glossy_node.location = (principled.location.x, principled.location.y - 400)
-    
-    # Add Shader (соединяем отражение с обычным материалом)
-    add_node = nodes.new('ShaderNodeAddShader')
-    add_node.parent = frame
-    add_node.location = (principled.location.x + 300, principled.location.y - 400)
+    glossy_node.location = (principled.location.x + 400, principled.location.y - 800)
+
+    # Mix Shader (Угол Френеля + преломление + отражения = реалистичный лёд)
+    mix_node = nodes.new('ShaderNodeMixShader')
+    mix_node.parent = frame
+    mix_node.location = (principled.location.x + 600, principled.location.y - 400)
 
     # ==========================================
-    # 7. СОЕДИНЕНИЕ НОД (Линковка)
+    # 6. СОЕДИНЕНИЕ НОД (Линковка)
     # ==========================================
     
     # Сначала очистим связь Principled -> Output, так как мы врежемся между ними
     if output_node.inputs['Surface'].is_linked:
         tree.links.remove(output_node.inputs['Surface'].links[0])
 
-    # Подключаем необходимое к Glossy BSDF
-    links.new(image_node.outputs['Color'], glossy_node.inputs['Color'])
-    links.new(separate_node.outputs['Red'], glossy_node.inputs['Roughness'])
+    # Обработка базового цвета
+    links.new(image_node.outputs['Color'], separate_hsv_node.inputs['Color'])
+    links.new(separate_hsv_node.outputs[0], combine_node.inputs[0])
+
+    # Подключаем все нормальные карты
+    links.new(normal_node.outputs['Normal'], fresnel_node.inputs['Normal'])
+    links.new(normal_node.outputs['Normal'], refraction_node.inputs['Normal'])
     links.new(normal_node.outputs['Normal'], glossy_node.inputs['Normal'])
+
+    # Подключаем все карты шероховатостей
+    links.new(separate_node.outputs['Red'], refraction_node.inputs['Roughness'])
+    links.new(separate_node.outputs['Red'], glossy_node.inputs['Roughness'])
+
+    # Устанавливаем обработанный цвет для преломления
+    links.new(combine_node.outputs['Color'], refraction_node.inputs['Color'])
+
+    # Соединяем все шейдеры в миксере для реалистичного льда
+    links.new(fresnel_node.outputs['Factor'], mix_node.inputs[0]) # Первый вход
+    links.new(refraction_node.outputs['BSDF'], mix_node.inputs[1]) # Второй вход
+    links.new(glossy_node.outputs['BSDF'], mix_node.inputs[2]) # Третий вход
     
-    # Смешаем Principled BSDF и Glossy BSDF
-    links.new(principled.outputs['BSDF'], add_node.inputs[0])
-    links.new(glossy_node.outputs['BSDF'], add_node.inputs[1])
-    
-    # Add -> Output
-    links.new(add_node.outputs['Shader'], output_node.inputs['Surface'])
+    # Mix -> Output
+    links.new(mix_node.outputs['Shader'], output_node.inputs['Surface'])
 
     print(f"Материал {mat.name} успешно обновлён!")
 
@@ -1392,6 +1701,12 @@ def auto_configure_materials():
         if clean_name in LIST_STAINED_GLASS_PANE_TOP:
             setup_stained_glass_pane_top(mat)
 
+        if clean_name in LIST_ACHROMATIC_GLASS:
+            setup_achromatic_glass(mat)
+
+        if clean_name in LIST_ACHROMATIC_GLASS_PANE_TOP:
+            setup_achromatic_glass_pane_top(mat)
+
         if clean_name in LIST_GLASS:
             setup_glass(mat)
 
@@ -1438,6 +1753,62 @@ def set_flat_shading_for_all():
     # 4. (Опционально) Снимаем выделение, чтобы сцена была чистой
     bpy.ops.object.select_all(action='DESELECT')
 
+# Всякая каустика
+
+# Включение приёма каустики для всех материалов
+def enable_receive_caustics_for_all():
+    print("--- Включаю получение каустики (Receive) для всей геометрии ---")
+    count = 0
+    
+    # Проходим по всем объектам в текущей сцене
+    for obj in bpy.context.scene.objects:
+        # Нас интересуют только меши (у ламп и камер нет этого свойства)
+        if obj.type == 'MESH':
+            obj.cycles.is_caustics_receiver = True
+            count += 1
+            
+    print(f"Готово: Получение каустики включено для {count} объектов.")
+
+# Отбрасывание каустики для преломляющих объектов
+def enable_caustics_caster_for_refractive():
+    print("--- Включаю отбрасывание каустики (Cast) для преломляющих объектов ---")
+    
+    # 1. Объединяем все нужные списки в одно общее множество
+    # Оператор | работает как "объединение" для множеств (sets)
+    # Если твои списки это list [], то используй set(LIST_WATER) | set(LIST_GLASS)...
+    # Но так как мы договаривались использовать {}, то | сработает сразу.
+    refractive_names = (
+        LIST_WATER |
+        LIST_STAINED_GLASS |
+        LIST_STAINED_GLASS_PANE_TOP |
+        LIST_ACHROMATIC_GLASS |
+        LIST_ACHROMATIC_GLASS_PANE_TOP |
+        LIST_GLASS |
+        LIST_GLASS_PANE_TOP |
+        LIST_ICE
+    )
+
+    count = 0
+
+    # 2. Проходим по всем объектам сцены
+    for obj in bpy.context.scene.objects:
+        # Нас интересуют только меши
+        if obj.type != 'MESH':
+            continue
+            
+        # Очищаем имя от суффиксов Blender (.001, .002)
+        clean_name = obj.name.split('.')[0]
+        
+        # 3. Проверка: есть ли имя в нашем объединенном списке?
+        if clean_name in refractive_names:
+            # Включаем галочку "Cast Shadow Caustics"
+            obj.cycles.is_caustics_caster = True
+            # ВЫКЛЮЧАЕМ галочку "Receive Shadow Caustics" (иначе чернота появляется)
+            obj.cycles.is_caustics_receiver = False
+            count += 1
+
+    print(f"Готово: Отбрасывание каустики включено для {count} объектов.")
+
 # ==========================================
 # ЗАПУСК ВСЕГО
 # ==========================================
@@ -1453,5 +1824,11 @@ auto_configure_materials()
 
 # 3. Делаем всё плоским
 set_flat_shading_for_all()
+
+# 4. Включаем для всех объектов приём каустики
+enable_receive_caustics_for_all()
+
+# 5. Включаем для преломляющих объектов отбрасывание каустики
+enable_caustics_caster_for_refractive()
 
 print("Автоматизация завершена! Можно рендерить.")
