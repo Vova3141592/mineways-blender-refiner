@@ -533,22 +533,6 @@ def set_closest_interpolation():
                     print(f"Material: {material.name} | Node: {node.name} -> Closest")
 
 # --- ФУНКЦИИ ДОНАСТРОЙКИ МАТЕРИАЛОВ ---
-
-# Слабое свечение
-def setup_emission_weak(mat):
-    # Получаем доступ к нодам
-    nodes = mat.node_tree.nodes
-    
-    # Ищем Principled BSDF
-    principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
-    
-    if principled:
-        try:
-            # Устанавливаем силу свечения
-            principled.inputs[28].default_value = 10.0
-            print(f"[Свет] {mat.name}: Яркость установлена на 10")
-        except KeyError:
-            print(f"[Ошибка] У материала {mat.name} нет слота 'Emission Strength'")
     
 # Сильное свечение
 def setup_emission_strong(mat):
@@ -561,8 +545,8 @@ def setup_emission_strong(mat):
     if principled:
         try:
             # Устанавливаем силу свечения
-            principled.inputs[28].default_value = 400.0
-            print(f"[Свет] {mat.name}: Яркость установлена на 400")
+            principled.inputs[28].default_value = 20.0
+            print(f"[Свет] {mat.name}: Яркость установлена на 20")
         except KeyError:
             print(f"[Ошибка] У материала {mat.name} нет слота 'Emission Strength'")
     
@@ -1682,10 +1666,7 @@ def auto_configure_materials():
         # Мы отрезаем всё, что после точки, чтобы сравнивать чистое имя.
         clean_name = mat.name.split('.')[0]
         
-        # Точное сравнение с базами данных            
-        if clean_name in LIST_EMISSION_WEAK:
-            setup_emission_weak(mat)
-            
+        # Точное сравнение с базами данных                     
         if clean_name in LIST_EMISSION_STRONG:
             setup_emission_strong(mat)
             
